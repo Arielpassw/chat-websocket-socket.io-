@@ -16,6 +16,7 @@
     .msg { background: #1e293b; margin: 8px 0; padding: 10px; border-radius: 10px; }
     .system { color: #facc15; font-style: italic; }
     .private { border-left: 4px solid #f472b6; }
+    .sala-activa { background: #064e3b; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
   </style>
 </head>
 <body>
@@ -25,7 +26,16 @@
 
     <div class="card" id="registro">
       <h2>Registro</h2>
+
       <input id="nombre" placeholder="Escribe tu nombre" />
+
+      <!-- ACTIVIDAD: agregar un campo de sala -->
+      <select id="sala">
+        <option value="general">General</option>
+        <option value="soporte">Soporte</option>
+        <option value="juegos">Juegos</option>
+      </select>
+
       <button onclick="registrar()">Entrar al chat</button>
     </div>
 
@@ -36,12 +46,25 @@
       </div>
 
       <div class="card">
+        <!-- ACTIVIDAD: mostrar visualmente la sala activa -->
+        <div class="sala-activa">
+          Sala activa: <strong id="salaActiva">general</strong>
+        </div>
+
         <h2>Mensajes</h2>
         <div id="mensajes"></div>
 
+        <h3>Cambiar sala</h3>
+        <select id="nuevaSala">
+          <option value="general">General</option>
+          <option value="soporte">Soporte</option>
+          <option value="juegos">Juegos</option>
+        </select>
+        <button onclick="cambiarSala()">Cambiar sala</button>
+
         <h3>Mensaje global</h3>
-        <input id="mensaje" placeholder="Escribe un mensaje para todos" />
-        <button onclick="enviarGlobal()">Enviar a todos</button>
+        <input id="mensaje" placeholder="Escribe un mensaje para la sala actual" />
+        <button onclick="enviarGlobal()">Enviar a la sala</button>
 
         <h3>Mensaje privado</h3>
         <select id="destino"></select>
@@ -55,17 +78,38 @@
   <script>
     const socket = io();
     let miNombre = "";
+    let miSala = "general";
 
     function registrar() {
       miNombre = document.getElementById("nombre").value.trim();
+
+      // ACTIVIDAD: obtener la sala seleccionada por el usuario
+      miSala = document.getElementById("sala").value;
+
       if (!miNombre) {
         alert("Escribe tu nombre");
         return;
       }
 
-      socket.emit("registrarUsuario", miNombre);
+      // ACTIVIDAD: enviar nombre y sala al servidor
+      socket.emit("registrarUsuario", {
+        nombre: miNombre,
+        sala: miSala
+      });
+
       document.getElementById("registro").style.display = "none";
       document.getElementById("chat").style.display = "grid";
+      document.getElementById("salaActiva").textContent = miSala;
+      document.getElementById("nuevaSala").value = miSala;
+    }
+
+    function cambiarSala() {
+      const nuevaSala = document.getElementById("nuevaSala").value;
+
+      // ACTIVIDAD: permitir que el usuario cambie de sala
+      socket.emit("cambiarSala", nuevaSala);
+
+      document.getElementById("mensajes").innerHTML = "";
     }
 
     function enviarGlobal() {
@@ -73,8 +117,8 @@
       const mensaje = input.value.trim();
       if (!mensaje) return;
 
+      // ACTIVIDAD: este mensaje será enviado solo a la sala actual desde el servidor
       socket.emit("mensajeGlobal", {
-        usuario: miNombre,
         mensaje
       });
 
@@ -105,7 +149,9 @@
 
       usuarios.forEach((usuario) => {
         const li = document.createElement("li");
-        li.textContent = `${usuario.nombre} (${usuario.id})`;
+
+        // ACTIVIDAD: mostrar la sala de cada usuario
+        li.textContent = `${usuario.nombre} - Sala: ${usuario.sala}`;
         lista.appendChild(li);
 
         if (usuario.nombre !== miNombre) {
@@ -118,7 +164,7 @@
     });
 
     socket.on("mensajeGlobal", (data) => {
-      agregarMensaje(`${data.hora} - ${data.usuario}: ${data.mensaje}`);
+      agregarMensaje(`${data.hora} [${data.sala}] ${data.usuario}: ${data.mensaje}`);
     });
 
     socket.on("mensajePrivado", (data) => {
@@ -127,6 +173,12 @@
 
     socket.on("mensajeSistema", (mensaje) => {
       agregarMensaje(mensaje, "system");
+    });
+
+    socket.on("salaActualizada", (sala) => {
+      // ACTIVIDAD: actualizar visualmente la sala activa
+      miSala = sala;
+      document.getElementById("salaActiva").textContent = sala;
     });
 
     function agregarMensaje(texto, clase = "") {

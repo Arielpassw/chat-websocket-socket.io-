@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// Usuarios conectados guardados en memoria
 const usuarios = new Map();
 
 app.get("/health", (req, res) => {
@@ -20,28 +21,66 @@ app.get("/health", (req, res) => {
 io.on("connection", (socket) => {
   console.log("Usuario conectado:", socket.id);
 
-  socket.on("registrarUsuario", (nombre) => {
+  socket.on("registrarUsuario", (data) => {
+    // ACTIVIDAD: agregar un campo de sala
+    const sala = data.sala || "general";
+
     const usuario = {
       id: socket.id,
-      nombre: nombre || "Anónimo"
+      nombre: data.nombre || "Anónimo",
+      sala
     };
 
     usuarios.set(socket.id, usuario);
 
+    // ACTIVIDAD: permitir que cada usuario entre a una sala
+    socket.join(sala);
+
+    // ACTIVIDAD: mensaje solo para la sala actual
+    io.to(sala).emit("mensajeSistema", `${usuario.nombre} entró a la sala ${sala}`);
+
     io.emit("usuariosActualizados", Array.from(usuarios.values()));
-    io.emit("mensajeSistema", `${usuario.nombre} se conectó`);
+  });
+
+  socket.on("cambiarSala", (nuevaSala) => {
+    const usuario = usuarios.get(socket.id);
+    if (!usuario) return;
+
+    // PISTA DEL INGENIERO: sacar al usuario de la sala anterior
+    socket.leave(usuario.sala);
+
+    const salaAnterior = usuario.sala;
+    usuario.sala = nuevaSala;
+
+    // PISTA DEL INGENIERO: entrar a la nueva sala
+    socket.join(nuevaSala);
+
+    usuarios.set(socket.id, usuario);
+
+    io.to(salaAnterior).emit("mensajeSistema", `${usuario.nombre} salió de la sala ${salaAnterior}`);
+    io.to(nuevaSala).emit("mensajeSistema", `${usuario.nombre} entró a la sala ${nuevaSala}`);
+
+    io.emit("usuariosActualizados", Array.from(usuarios.values()));
+
+    // ACTIVIDAD: mostrar visualmente la sala activa
+    socket.emit("salaActualizada", nuevaSala);
   });
 
   socket.on("mensajeGlobal", (data) => {
-    io.emit("mensajeGlobal", {
-      usuario: data.usuario,
+    const usuario = usuarios.get(socket.id);
+    if (!usuario) return;
+
+    // ACTIVIDAD: los mensajes globales se envían solo a la sala actual
+    io.to(usuario.sala).emit("mensajeGlobal", {
+      usuario: usuario.nombre,
+      sala: usuario.sala,
       mensaje: data.mensaje,
       hora: new Date().toLocaleTimeString()
     });
   });
 
   socket.on("mensajePrivado", (data) => {
-    io.to(data.destinoId).emit("mensajePrivado", {
+    socket.to(data.destinoId).emit("mensajePrivado", {
       usuario: data.usuario,
       mensaje: data.mensaje,
       hora: new Date().toLocaleTimeString()
@@ -55,7 +94,7 @@ io.on("connection", (socket) => {
     io.emit("usuariosActualizados", Array.from(usuarios.values()));
 
     if (usuario) {
-      io.emit("mensajeSistema", `${usuario.nombre} se desconectó`);
+      io.to(usuario.sala).emit("mensajeSistema", `${usuario.nombre} se desconectó`);
     }
 
     console.log("Usuario desconectado:", socket.id);
